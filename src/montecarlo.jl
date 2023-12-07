@@ -143,6 +143,12 @@ function runsim_base(model::Model, draws::DataFrame; save_rvs::Bool=true)
         mcres[:beta1_global] = inst[:Consumption, :beta1_global]
         mcres[:beta2_global] = inst[:Consumption, :beta2_global]
         mcres[:persist] = inst[:Consumption, :damagepersist]
+        # export lossfactors
+        mcres[:Consumption_lossfactor_conspc] = copy(inst[:Consumption, :lossfactor_conspc])
+        mcres[:Consumption_lossfactor_temp] = copy(inst[:Consumption, :lossfactor_temp])
+        mcres[:Consumption_lossfactor_persistence] = copy(inst[:Consumption, :lossfactor_persistence])
+        mcres[:Consumption_lossfactor_SLR] = copy(inst[:Consumption, :lossfactor_SLR])
+        mcres[:Consumption_lossfactor_extradamages] = copy(inst[:Consumption, :lossfactor_extradamages])
 
         if save_rvs
             for jj in 2:ncol(draws)
@@ -291,6 +297,12 @@ function runsim(model::Model, draws::DataFrame, ism_used::Bool, omh_used::Bool, 
         mcres[:beta1_global] = inst[:Consumption, :beta1_global]
         mcres[:beta2_global] = inst[:Consumption, :beta2_global]
         mcres[:persist] = inst[:Consumption, :damagepersist]
+        # export lossfactors
+        mcres[:Consumption_lossfactor_conspc] = copy(inst[:Consumption, :lossfactor_conspc])
+        mcres[:Consumption_lossfactor_temp] = copy(inst[:Consumption, :lossfactor_temp])
+        mcres[:Consumption_lossfactor_persistence] = copy(inst[:Consumption, :lossfactor_persistence])
+        mcres[:Consumption_lossfactor_SLR] = copy(inst[:Consumption, :lossfactor_SLR])
+        mcres[:Consumption_lossfactor_extradamages] = copy(inst[:Consumption, :lossfactor_extradamages])
 
         if save_rvs
             for jj in 2:ncol(draws)
