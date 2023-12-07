@@ -140,6 +140,9 @@ function runsim_base(model::Model, draws::DataFrame; save_rvs::Bool=true)
         mcres[:TemperatureModel_T_AT] = copy(inst[:TemperatureModel, :T_AT])
         mcres[:SLRModel_SLR] = copy(inst[:SLRModel, :SLR])
         mcres[:Utility_world_disc_utility] = inst[:Utility, :world_disc_utility]
+        mcres[:beta1_global] = inst[:Consumption, :beta1_global]
+        mcres[:beta2_global] = inst[:Consumption, :beta2_global]
+        mcres[:persist] = inst[:Consumption, :damagepersist]
 
         if save_rvs
             for jj in 2:ncol(draws)
@@ -285,6 +288,9 @@ function runsim(model::Model, draws::DataFrame, ism_used::Bool, omh_used::Bool, 
         mcres[:TemperatureModel_T_AT] = copy(inst[:TemperatureModel, :T_AT])
         mcres[:SLRModel_SLR] = copy(inst[:SLRModel, :SLR])
         mcres[:Utility_world_disc_utility] = inst[:Utility, :world_disc_utility]
+        mcres[:beta1_global] = inst[:Consumption, :beta1_global]
+        mcres[:beta2_global] = inst[:Consumption, :beta2_global]
+        mcres[:persist] = inst[:Consumption, :damagepersist]
 
         if save_rvs
             for jj in 2:ncol(draws)

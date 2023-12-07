@@ -28,6 +28,19 @@ function getbhmbetas(iso, option, seed=nothing)
     return beta1, beta2
 end
 
+function getglobalbhmbetas_distribution(seed=nothing)
+    if seed != nothing
+        Random.seed!(seed)
+    end
+    mu1, mu2 = (0.012718353, -0.00048709)
+    var11 = 0.0000143458
+    var12 = -0.000000375824
+    var22 = 0.0000000140157
+    mvn = MvNormal([mu1, mu2], [var11 var12; var12 var22])
+    beta1, beta2 = rand(mvn)
+    return beta1, beta2
+end
+
 function gettemp1990(iso)
     return amocparams[amocparams."Country code" .== iso, "1990 temp"][1]
 end
