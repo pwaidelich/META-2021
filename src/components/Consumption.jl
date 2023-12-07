@@ -30,6 +30,11 @@ include("../lib/saverate.jl")
     seeds = Parameter{Int64}(index=[country])
     beta1 = Parameter(index=[country], unit="1/degC")
     beta2 = Parameter(index=[country], unit="1/degC^2")
+    beta1_global = Parameter(unit="1/degC", default = 0.012718353)
+    beta2_global = Parameter(unit="1/degC^2", default = -0.00048709)
+    use_global_betas = Parameter(default = 1)
+    use_global_beta_distribution = Parameter(default = 0)
+    tempdamage = Variable(index=[time, country])
 
     T_country_1990 = Parameter(index=[country], unit="degC")
 
@@ -48,6 +53,11 @@ include("../lib/saverate.jl")
 
     function init(pp, vv, dd)
         isos = dim_keys(model, :country)
+
+        if pp.use_global_betas == 1 && pp.use_global_beta_distribution == 1
+            pp.beta1_global, pp.beta2_global = getglobalbhmbetas_distribution()
+        end
+
 
         for cc in dd.country
             if pp.seeds[cc] != 0
@@ -123,7 +133,13 @@ include("../lib/saverate.jl")
         end
 
         for cc in dd.country
-            vv.conspc[tt, cc] = vv.conspc_preadj[tt, cc]*(1+(vv.gdppc_growth[tt, cc]-pp.beta1[cc]*(pp.T_country[tt, cc]-pp.T_country_1990[cc])-pp.beta2[cc]*(pp.T_country[tt, cc]-pp.T_country_1990[cc])^2))*(1-pp.SLR[tt]*pp.slrcoeff[cc])*(1 - pp.extradamage[tt, cc])
+            vv.tempdamage[tt, cc] = ifelse(pp.use_global_betas==0,
+                                           -pp.beta1[cc]*(pp.T_country[tt, cc]-pp.T_country_1990[cc])-pp.beta2[cc]*(pp.T_country[tt, cc]-pp.T_country_1990[cc])^2,
+                                           # NOTE: signs are reversed for default BHM function because negative value implies damage - for Dietz et al 2021 country-specific damage function, positive value = damage
+                                           # also, BHM original function uses h(T)-h(T_base), so we need to multiply beta2 by the difference in squared terms, not the squared difference
+                                           pp.beta1_global*(pp.T_country[tt, cc]-pp.T_country_1990[cc]) + pp.beta2_global*(pp.T_country[tt, cc]^2-pp.T_country_1990[cc]^2))
+
+            vv.conspc[tt, cc] = vv.conspc_preadj[tt, cc]*(1+(vv.gdppc_growth[tt, cc]+vv.tempdamage[tt, cc]))*(1-pp.SLR[tt]*pp.slrcoeff[cc])*(1 - pp.extradamage[tt, cc])
 
             # Compute baseline consumption per capita without damages
             vv.baseline_consumption_percap_percountry[tt,cc] = (1-pp.saverate[cc])*vv.gdppc[tt, cc]
