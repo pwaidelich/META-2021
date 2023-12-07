@@ -140,6 +140,12 @@ function runsim_base(model::Model, draws::DataFrame; save_rvs::Bool=true)
         mcres[:TemperatureModel_T_AT] = copy(inst[:TemperatureModel, :T_AT])
         mcres[:SLRModel_SLR] = copy(inst[:SLRModel, :SLR])
         mcres[:Utility_world_disc_utility] = inst[:Utility, :world_disc_utility]
+        # export lossfactors
+        mcres[:Consumption_lossfactor_conspc] = copy(inst[:Consumption, :lossfactor_conspc])
+        mcres[:Consumption_lossfactor_temp] = copy(inst[:Consumption, :lossfactor_temp])
+        mcres[:Consumption_lossfactor_persistence] = copy(inst[:Consumption, :lossfactor_persistence])
+        mcres[:Consumption_lossfactor_SLR] = copy(inst[:Consumption, :lossfactor_SLR])
+        mcres[:Consumption_lossfactor_extradamages] = copy(inst[:Consumption, :lossfactor_extradamages])
 
         if save_rvs
             for jj in 2:ncol(draws)
@@ -283,6 +289,12 @@ function runsim(model::Model, draws::DataFrame, ism_used::Bool, omh_used::Bool, 
         mcres[:TemperatureModel_T_AT] = copy(inst[:TemperatureModel, :T_AT])
         mcres[:SLRModel_SLR] = copy(inst[:SLRModel, :SLR])
         mcres[:Utility_world_disc_utility] = inst[:Utility, :world_disc_utility]
+        # export lossfactors
+        mcres[:Consumption_lossfactor_conspc] = copy(inst[:Consumption, :lossfactor_conspc])
+        mcres[:Consumption_lossfactor_temp] = copy(inst[:Consumption, :lossfactor_temp])
+        mcres[:Consumption_lossfactor_persistence] = copy(inst[:Consumption, :lossfactor_persistence])
+        mcres[:Consumption_lossfactor_SLR] = copy(inst[:Consumption, :lossfactor_SLR])
+        mcres[:Consumption_lossfactor_extradamages] = copy(inst[:Consumption, :lossfactor_extradamages])
 
         if save_rvs
             for jj in 2:ncol(draws)

@@ -13,6 +13,11 @@ include("../lib/saverate.jl")
     conspc_preadj = Variable(index=[time, country], unit="2010 USD PPP") # previous year's
     conspc = Variable(index=[time, country], unit="2010 USD PPP")
     baseline_consumption_percap_percountry = Variable(index = [time, country], unit = "2010 USD PPP") # Counterfactual consumption per cap per country from SSPs
+    lossfactor_conspc = Variable(index=[time, country])
+    lossfactor_temp = Variable(index=[time, country])
+    lossfactor_persistence = Variable(index=[time, country])
+    lossfactor_SLR = Variable(index=[time, country])
+    lossfactor_extradamages = Variable(index=[time, country])
 
     # Parameters
     ssp = Parameter{String}()
@@ -131,6 +136,13 @@ include("../lib/saverate.jl")
             if vv.conspc[tt, cc] <= pp.min_conspc && vv.conspc[TimestepIndex(1), cc] != 0
                 vv.conspc[tt, cc] = pp.min_conspc
             end
+
+            # Compute relative loss in consumption per capita compared to baseline
+            vv.lossfactor_conspc[tt, cc] = vv.conspc[tt, cc]/vv.baseline_consumption_percap_percountry[tt,cc]
+            vv.lossfactor_temp[tt, cc] = 1 - pp.beta1[cc]*(pp.T_country[tt, cc] - pp.T_country_1990[cc]) - pp.beta2[cc]*(pp.T_country[tt, cc] - pp.T_country_1990[cc])^2
+            vv.lossfactor_persistence[tt,cc] = (vv.conspc_preadj[tt, cc]*(1+(vv.gdppc_growth[tt, cc])))/vv.baseline_consumption_percap_percountry[tt,cc]
+            vv.lossfactor_SLR[tt,cc] = (1-pp.SLR[tt]*pp.slrcoeff[cc])
+            vv.lossfactor_extradamages[tt,cc] = (1 - pp.extradamage[tt, cc])
         end
     end
 end
