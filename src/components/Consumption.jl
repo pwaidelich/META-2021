@@ -38,7 +38,7 @@ include("../lib/saverate.jl")
     beta1_global = Parameter(unit="1/degC", default = 0.012718353)
     beta2_global = Parameter(unit="1/degC^2", default = -0.00048709)
     use_global_betas = Parameter(default = 1)
-    use_global_beta_distribution = Parameter(default = 0)
+    use_global_beta_distribution = Parameter(default = 1)
     tempdamage = Variable(index=[time, country])
 
     T_country_1990 = Parameter(index=[country], unit="degC")
