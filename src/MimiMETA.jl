@@ -71,6 +71,7 @@ function base_model(; rcp="CP-Base", ssp="SSP2", co2="Expectation", ch4="default
 
     # Setup Consumption
     cons[:T_country] = pattscale[:T_country];
+    cons[:T_AT] = temperaturemodel[:T_AT];
     cons[:SLR] = slr[:SLR];
 
     # Setup Utility
