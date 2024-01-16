@@ -227,7 +227,7 @@ function getsim(trials::Int64, pcf_calib::String, amazon_calib::String, gis_cali
     draws
 end
 
-function runsim(model::Model, draws::DataFrame, ism_used::Bool, omh_used::Bool, amoc_used::Bool, amazon_calib::String, wais_calib::String; save_rvs::Bool=true)
+function runsim(model::Model, draws::DataFrame, ism_used::Bool, omh_used::Bool, amoc_used::Bool, saf_used::Bool, amazon_calib::String, wais_calib::String; save_rvs::Bool=true)
     ## Ensure that all draws variables have global connections, if we included their components
     for jj in 2:ncol(draws)
         if !has_parameter(model.md, Symbol(names(draws)[jj]))
@@ -252,7 +252,9 @@ function runsim(model::Model, draws::DataFrame, ism_used::Bool, omh_used::Bool, 
 
         # SAF
 
-        update_param!(inst, :SAFModel_ECS, draws.TemperatureModel_fair_ECS[ii]) # SAFModel.ECS
+        if saf_used
+            update_param!(inst, :SAFModel_ECS, draws.TemperatureModel_fair_ECS[ii]) # SAFModel.ECS
+        end
 
         # Damages
 
