@@ -139,16 +139,22 @@ function runsim_base(model::Model, draws::DataFrame; save_rvs::Bool=true)
         mcres = Dict{Symbol, Any}()
         mcres[:TemperatureModel_T_AT] = copy(inst[:TemperatureModel, :T_AT])
         mcres[:SLRModel_SLR] = copy(inst[:SLRModel, :SLR])
-        mcres[:Utility_world_disc_utility] = inst[:Utility, :world_disc_utility]
-        mcres[:beta1_global] = inst[:Consumption, :beta1_global]
-        mcres[:beta2_global] = inst[:Consumption, :beta2_global]
-        mcres[:persist] = inst[:Consumption, :damagepersist]
+        #mcres[:Utility_world_disc_utility] = inst[:Utility, :world_disc_utility]
+        mcres[:Consumption_beta1_bhm] = inst[:Consumption, :beta1_bhm]
+        mcres[:Consumption_beta2_bhm] = inst[:Consumption, :beta2_bhm]
+        mcres[:Consumption_slrcoeff] = copy(inst[:Consumption, :slrcoeff])
+        mcres[:Consumption_damagepersist] = inst[:Consumption, :damagepersist]
+        mcres[:Consumption_tempdamage] = copy(inst[:Consumption, :tempdamage])
+        mcres[:Consumption_tempdamage_bhm] = copy(inst[:Consumption, :tempdamage_bhm])
+        mcres[:Consumption_tempdamage_waid] = copy(inst[:Consumption, :tempdamage_waid])
+        mcres[:Consumption_tempdamage_coacch] = copy(inst[:Consumption, :tempdamage_coacch])
+        mcres[:Consumption_extradamage] = copy(inst[:Consumption, :extradamage])
         # export lossfactors
         mcres[:Consumption_lossfactor_conspc] = copy(inst[:Consumption, :lossfactor_conspc])
-        mcres[:Consumption_lossfactor_temp] = copy(inst[:Consumption, :lossfactor_temp])
-        mcres[:Consumption_lossfactor_persistence] = copy(inst[:Consumption, :lossfactor_persistence])
-        mcres[:Consumption_lossfactor_SLR] = copy(inst[:Consumption, :lossfactor_SLR])
-        mcres[:Consumption_lossfactor_extradamages] = copy(inst[:Consumption, :lossfactor_extradamages])
+        #mcres[:Consumption_lossfactor_temp] = copy(inst[:Consumption, :lossfactor_temp])
+        #mcres[:Consumption_lossfactor_persistence] = copy(inst[:Consumption, :lossfactor_persistence])
+        #mcres[:Consumption_lossfactor_SLR] = copy(inst[:Consumption, :lossfactor_SLR])
+        #mcres[:Consumption_lossfactor_extradamages] = copy(inst[:Consumption, :lossfactor_extradamages])
 
         if save_rvs
             for jj in 2:ncol(draws)
@@ -211,7 +217,7 @@ function getsim(trials::Int64, pcf_calib::String, amazon_calib::String, gis_cali
     # GIS
 
     if gis_calib == "Distribution"
-        draws.GISModel_avoldot = rand(Normal(-0.0000106, 0.0000244/0.5/100), trials) # Only works with a meltmult of 1
+        draws.GISModel_avoldot0 = rand(Normal(-0.0000106, 0.0000244/0.5/100), trials) # Only works with a meltmult of 1
     end
 
     # WAIS
@@ -299,16 +305,22 @@ function runsim(model::Model, draws::DataFrame, ism_used::Bool, omh_used::Bool, 
         mcres = Dict{Symbol, Any}()
         mcres[:TemperatureModel_T_AT] = copy(inst[:TemperatureModel, :T_AT])
         mcres[:SLRModel_SLR] = copy(inst[:SLRModel, :SLR])
-        mcres[:Utility_world_disc_utility] = inst[:Utility, :world_disc_utility]
-        mcres[:beta1_global] = inst[:Consumption, :beta1_global]
-        mcres[:beta2_global] = inst[:Consumption, :beta2_global]
-        mcres[:persist] = inst[:Consumption, :damagepersist]
+        #mcres[:Utility_world_disc_utility] = inst[:Utility, :world_disc_utility]
+        mcres[:Consumption_beta1_bhm] = inst[:Consumption, :beta1_bhm]
+        mcres[:Consumption_beta2_bhm] = inst[:Consumption, :beta2_bhm]
+        mcres[:Consumption_slrcoeff] = copy(inst[:Consumption, :slrcoeff])
+        mcres[:Consumption_damagepersist] = inst[:Consumption, :damagepersist]
+        mcres[:Consumption_tempdamage] = copy(inst[:Consumption, :tempdamage])
+        mcres[:Consumption_tempdamage_bhm] = copy(inst[:Consumption, :tempdamage_bhm])
+        mcres[:Consumption_tempdamage_waid] = copy(inst[:Consumption, :tempdamage_waid])
+        mcres[:Consumption_tempdamage_coacch] = copy(inst[:Consumption, :tempdamage_coacch])
+        mcres[:Consumption_extradamage] = copy(inst[:Consumption, :extradamage])
         # export lossfactors
         mcres[:Consumption_lossfactor_conspc] = copy(inst[:Consumption, :lossfactor_conspc])
-        mcres[:Consumption_lossfactor_temp] = copy(inst[:Consumption, :lossfactor_temp])
-        mcres[:Consumption_lossfactor_persistence] = copy(inst[:Consumption, :lossfactor_persistence])
-        mcres[:Consumption_lossfactor_SLR] = copy(inst[:Consumption, :lossfactor_SLR])
-        mcres[:Consumption_lossfactor_extradamages] = copy(inst[:Consumption, :lossfactor_extradamages])
+        #mcres[:Consumption_lossfactor_temp] = copy(inst[:Consumption, :lossfactor_temp])
+        #mcres[:Consumption_lossfactor_persistence] = copy(inst[:Consumption, :lossfactor_persistence])
+        #mcres[:Consumption_lossfactor_SLR] = copy(inst[:Consumption, :lossfactor_SLR])
+        #mcres[:Consumption_lossfactor_extradamages] = copy(inst[:Consumption, :lossfactor_extradamages])
 
         if save_rvs
             for jj in 2:ncol(draws)

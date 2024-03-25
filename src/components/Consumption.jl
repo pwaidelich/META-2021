@@ -43,17 +43,20 @@ include("../lib/saverate.jl")
     tempdamage_bhm = Variable(index=[time, country], unit = "%GDP")
     # parameters and variables to implement Waidelich et al 2024
     use_waid_distribution = Parameter{Int64}()
-    beta0_waid = Parameter(index=[country])
+    #beta0_waid = Parameter(index=[country])
     beta1_waid = Parameter(index=[country], unit="1/degC")
     beta2_waid = Parameter(index=[country], unit="1/degC^2")
     tempdamage_waid = Variable(index=[time, country], unit = "%GDP")
     T_AT = Parameter(index=[time], unit="degC")
+    T_AT_baseline_waid = Parameter(unit="degC", default = 0.84)
+    #T_AT_cap_waid = Parameter(unit="degC", default = 6.181668)
     # parameters and variables to implement COACCH (van der Wijst et al 2023)
     beta1_coacch = Parameter(index=[country], unit="1/degC")
     beta2_coacch = Parameter(index=[country], unit="1/degC^2")
+    T_AT_1986_2005 = Parameter(unit="degC", default = 0.776462745) # calculated via Berkeley Earth Annual Anomalies (Land + Ocean anomaly using air temperature above sea ice)
     tempdamage_coacch = Variable(index=[time, country], unit = "%GDP")
     # parameter determining which market damages are used (0 = Dietz, 1 = BHM, 2 = Waid et al, 3 = COACCH)
-    tempdamage_switch = Parameter(default = 0)
+    tempdamage_switch = Parameter(default = 1)
 
     T_country_1990 = Parameter(index=[country], unit="degC")
 
@@ -73,10 +76,11 @@ include("../lib/saverate.jl")
     function init(pp, vv, dd)
         isos = dim_keys(model, :country)
 
-        if pp.use_global_betas == 1 && pp.use_global_beta_distribution == 1
-            pp.beta1_global, pp.beta2_global = getglobalbhmbetas_distribution()
+        if pp.use_bhm_distribution != 0
+            betaboths_bhm = getglobalbhmbetas_distribution()
+            pp.beta1_bhm = betaboths_bhm[1]
+            pp.beta2_bhm = betaboths_bhm[2]
         end
-
 
         for cc in dd.country
             if pp.seeds[cc] != 0
@@ -85,17 +89,11 @@ include("../lib/saverate.jl")
                 pp.beta2[cc] = betaboths[2]
             end
 
-            if pp.use_bhm_distribution != 0
-                betaboths_bhm = getglobalbhmbetas_distribution()
-                pp.beta1_bhm = betaboths_bhm[1]
-                pp.beta2_bhm = betaboths_bhm[2]
-            end
-
             if pp.use_waid_distribution != 0
                 betaboths_waid = getwaidbetas(isos[cc], "waid_distribution")
-                pp.beta0_waid[cc] = betaboths_waid[1]
-                pp.beta1_waid[cc] = betaboths_waid[2]
-                pp.beta2_waid[cc] = betaboths_waid[3]
+                #pp.beta0_waid[cc] = betaboths_waid[1]
+                pp.beta1_waid[cc] = betaboths_waid[1]
+                pp.beta2_waid[cc] = betaboths_waid[2]
             end
         end
 
@@ -168,9 +166,9 @@ include("../lib/saverate.jl")
             # NOTE: signs are reversed because for Dietz et al 2021 country-specific damage function, positive value = damage
             vv.tempdamage[tt, cc] = - pp.beta1[cc]*(pp.T_country[tt, cc]-pp.T_country_1990[cc]) - pp.beta2[cc]*(pp.T_country[tt, cc]-pp.T_country_1990[cc])^2
             vv.tempdamage_bhm[tt, cc] = pp.beta1_bhm*(pp.T_country[tt, cc]-pp.T_country_1990[cc]) + pp.beta2_bhm*(pp.T_country[tt, cc]^2-pp.T_country_1990[cc]^2)
-            vv.tempdamage_waid[tt, cc] = pp.beta0_waid[cc] + pp.beta1_waid[cc]*pp.T_AT[tt] + pp.beta2_waid[cc]*(pp.T_AT[tt]^2)
-            # we use 2010 global warming as baseline - van der Wijst et al 2023 use 1986-2005 average (see their Fig. 1) XX
-            vv.tempdamage_coacch[tt, cc] = (1/100) * (- pp.beta1_coacch[cc]*(pp.T_AT[tt] - pp.T_AT[TimestepIndex(1)]) - pp.beta2_coacch[cc]*((pp.T_AT[tt] - pp.T_AT[TimestepIndex(1)])^2))
+            vv.tempdamage_waid[tt, cc] = pp.beta1_waid[cc]*(pp.T_AT[tt] - pp.T_AT_baseline_waid) + pp.beta2_waid[cc]*(pp.T_AT[tt] - pp.T_AT_baseline_waid)^2
+            # van der Wijst et al 2023 damage functions use global warming over 1986-2005 average and return results in %GDP (> 0 = damage)
+            vv.tempdamage_coacch[tt, cc] = (1/100) * (- pp.beta1_coacch[cc]*(pp.T_AT[tt] - pp.T_AT_1986_2005) - pp.beta2_coacch[cc]*((pp.T_AT[tt] - pp.T_AT_1986_2005)^2))
 
             if pp.tempdamage_switch == 0
                 vv.conspc[tt, cc] = vv.conspc_preadj[tt, cc]*(1+vv.gdppc_growth[tt, cc]+vv.tempdamage[tt, cc])*(1-pp.SLR[tt]*pp.slrcoeff[cc])*(1 - pp.extradamage[tt, cc])
@@ -249,15 +247,15 @@ function addConsumption(model, tdamage, slrdamage, ssp)
     # if Waidelich et al distribution is set, we draw - otherwise, we populate with point estimates
     if tdamage == "waid_distribution"
         cons[:use_waid_distribution] = 1
-        cons[:beta0_waid] = zeros(length(isos))
+        #cons[:beta0_waid] = zeros(length(isos))
         cons[:beta1_waid] = zeros(length(isos))
         cons[:beta2_waid] = zeros(length(isos))
     else
         cons[:use_waid_distribution] = 0
         betaboths_waid = [getwaidbetas(iso, "waid_pointestimate") for iso in isos]
-        cons[:beta0_waid] = [betaboth[1] for betaboth in betaboths_waid]
-        cons[:beta1_waid] = [betaboth[2] for betaboth in betaboths_waid]
-        cons[:beta2_waid] = [betaboth[3] for betaboth in betaboths_waid]
+        #cons[:beta0_waid] = [betaboth[1] for betaboth in betaboths_waid]
+        cons[:beta1_waid] = [betaboth[1] for betaboth in betaboths_waid]
+        cons[:beta2_waid] = [betaboth[2] for betaboth in betaboths_waid]
     end
 
     # COACCH betas default to central value (= 50th quantile)

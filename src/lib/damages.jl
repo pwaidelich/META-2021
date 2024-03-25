@@ -45,7 +45,6 @@ end
 
 function getwaidbetas(iso, option, seed=nothing)
     if option == "waid_pointestimate"
-        beta0_waid = waidbetas.beta0_waid[waidbetas.iso .== iso][1]
         beta1_waid = waidbetas.beta1_waid[waidbetas.iso .== iso][1]
         beta2_waid = waidbetas.beta2_waid[waidbetas.iso .== iso][1]
     elseif option == "waid_distribution"
@@ -53,18 +52,22 @@ function getwaidbetas(iso, option, seed=nothing)
             Random.seed!(seed)
         end
 
-        mu1, mu2, mu3 = getwaidbetas(iso, "waid_pointestimate")
+        mu1, mu2 = getwaidbetas(iso, "waid_pointestimate")
         var11 = waidbetas.var11[waidbetas.iso .== iso][1]
-        var12 = waidbetas.var12[waidbetas.iso .== iso][1]
-        var13 = waidbetas.var13[waidbetas.iso .== iso][1]
-        var22 = waidbetas.var22[waidbetas.iso .== iso][1]
-        var23 = waidbetas.var23[waidbetas.iso .== iso][1]
-        var33 = waidbetas.var33[waidbetas.iso .== iso][1]
-        mvn = MvNormal([mu1, mu2, mu3], [var11 var12 var13; var12 var22 var23; var13 var23 var33])
-        beta0_waid, beta1_waid, beta2_waid = rand(mvn)
+
+        if mu2 != 0.
+            var12 = waidbetas.var12[waidbetas.iso .== iso][1]
+            var22 = waidbetas.var22[waidbetas.iso .== iso][1]
+            mvn = MvNormal([mu1, mu2], [var11 var12; var12 var22])
+            beta1_waid, beta2_waid = rand(mvn)
+        else
+            uvn = Normal(mu1, var11)
+            beta1_waid = rand(uvn)
+            beta2_waid = 0.
+        end
     end
 
-    return beta0_waid, beta1_waid, beta2_waid
+    return beta1_waid, beta2_waid
 end
 
 function getcoacchbetas(iso)
