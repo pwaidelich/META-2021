@@ -5,6 +5,22 @@ amocparams = CSV.read("../data/AMOCparams.csv", DataFrame)
 waidbetas = CSV.read("../data/WaidelichEtAlbetas.csv", DataFrame)
 coacchbetas = CSV.read("../data/COACCHbetas.csv", DataFrame)
 
+function getcoacchalpha_distribution(iso, seed=nothing, n=1)
+    uvn = Normal(coacchbetas.no_slr_a_norm_mean[coacchbetas.iso .== iso][1],
+                 coacchbetas.no_slr_a_norm_sd[coacchbetas.iso .== iso][1])
+
+    if seed != nothing
+        Random.seed!(seed)
+    end
+    a_draw = rand(uvn, n)
+
+    if n == 1
+        a_draw = a_draw[1]
+    end
+
+    return a_draw
+end
+
 function getbhmbetas(iso, option, seed=nothing)
     if option == "pointestimate"
         beta1 = bhmbetas.beta1[bhmbetas.iso .== iso][1]
