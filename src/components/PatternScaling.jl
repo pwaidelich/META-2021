@@ -16,6 +16,9 @@
     T_AT_2010 = Parameter(unit="degC", default=0.854) # warming in 2010
     GMST_2010 = Parameter(unit="degC", default=20.02780209) # global mean temperature in 2010
 
+    # new variable to emulate AMOC shift with GMST-dependent damage function
+    T_AT_emulated = Variable(index=[time, country], unit="degC")
+
     function run_timestep(pp, vv, dd, tt)
         for cc in dd.country
             if pp.GMST_2010 + pp.T_AT[tt] - pp.T_AT_2010 - 18.825 > 0
@@ -24,6 +27,8 @@
                 vv.scale_country[tt, cc] = pp.ps_alpha[cc] + pp.ps_beta[cc] * log(pp.GMST_2010 - 18.825)
             end
             vv.T_country[tt, cc] = (pp.GMST_2010+pp.T_AT[tt]-pp.T_AT[TimestepIndex(1)])*vv.scale_country[tt, cc]
+
+            vv.T_AT_emulated[tt, cc] = pp.T_AT[tt]
         end
     end
 end
