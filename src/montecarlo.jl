@@ -236,7 +236,13 @@ function getsim(trials::Int64, pcf_calib::String, amazon_calib::String, gis_cali
     draws
 end
 
-function runsim(model::Model, draws::DataFrame, ism_used::Bool, omh_used::Bool, amoc_used::Bool, saf_used::Bool, amazon_calib::String, wais_calib::String; save_rvs::Bool=true)
+function runsim(model::Model, draws::DataFrame, ism_used::Bool, omh_used::Bool, amoc_used::Bool, saf_used::Bool, amazon_calib::String, wais_calib::String; save_rvs::Bool=true,
+    save_lossfactor_as_csv::Bool=false, dir_lossfactor_csv::String,
+    country_iso3_subset::Vector{String3}=nothing)
+
+    # load the country iso3 codes
+    countries_iso3 = CSV.read("../data/pattern-scaling.csv", DataFrame).Country
+
     ## Ensure that all draws variables have global connections, if we included their components
     for jj in 2:ncol(draws)
         if !has_parameter(model.md, Symbol(names(draws)[jj]))
@@ -303,20 +309,20 @@ function runsim(model::Model, draws::DataFrame, ism_used::Bool, omh_used::Bool, 
         run(inst)
 
         mcres = Dict{Symbol, Any}()
-        mcres[:TemperatureModel_T_AT] = copy(inst[:TemperatureModel, :T_AT])
-        mcres[:SLRModel_SLR] = copy(inst[:SLRModel, :SLR])
+        #mcres[:TemperatureModel_T_AT] = copy(inst[:TemperatureModel, :T_AT])
+        #mcres[:SLRModel_SLR] = copy(inst[:SLRModel, :SLR])
         #mcres[:Utility_world_disc_utility] = inst[:Utility, :world_disc_utility]
-        mcres[:Consumption_beta1_bhm] = inst[:Consumption, :beta1_bhm]
-        mcres[:Consumption_beta2_bhm] = inst[:Consumption, :beta2_bhm]
-        mcres[:Consumption_slrcoeff] = copy(inst[:Consumption, :slrcoeff])
-        mcres[:Consumption_damagepersist] = inst[:Consumption, :damagepersist]
-        mcres[:Consumption_tempdamage] = copy(inst[:Consumption, :tempdamage])
-        mcres[:Consumption_tempdamage_bhm] = copy(inst[:Consumption, :tempdamage_bhm])
-        mcres[:Consumption_tempdamage_waid] = copy(inst[:Consumption, :tempdamage_waid])
-        mcres[:Consumption_tempdamage_coacch] = copy(inst[:Consumption, :tempdamage_coacch])
-        mcres[:Consumption_extradamage] = copy(inst[:Consumption, :extradamage])
+        #mcres[:Consumption_beta1_bhm] = inst[:Consumption, :beta1_bhm]
+        #mcres[:Consumption_beta2_bhm] = inst[:Consumption, :beta2_bhm]
+        #mcres[:Consumption_slrcoeff] = copy(inst[:Consumption, :slrcoeff])
+        #mcres[:Consumption_damagepersist] = inst[:Consumption, :damagepersist]
+        #mcres[:Consumption_tempdamage] = copy(inst[:Consumption, :tempdamage])
+        #mcres[:Consumption_tempdamage_bhm] = copy(inst[:Consumption, :tempdamage_bhm])
+        #mcres[:Consumption_tempdamage_waid] = copy(inst[:Consumption, :tempdamage_waid])
+        #mcres[:Consumption_tempdamage_coacch] = copy(inst[:Consumption, :tempdamage_coacch])
+        #mcres[:Consumption_extradamage] = copy(inst[:Consumption, :extradamage])
         # export lossfactors
-        mcres[:Consumption_lossfactor_conspc] = copy(inst[:Consumption, :lossfactor_conspc])
+        #mcres[:Consumption_lossfactor_conspc] = copy(inst[:Consumption, :lossfactor_conspc])
         #mcres[:Consumption_lossfactor_temp] = copy(inst[:Consumption, :lossfactor_temp])
         #mcres[:Consumption_lossfactor_persistence] = copy(inst[:Consumption, :lossfactor_persistence])
         #mcres[:Consumption_lossfactor_SLR] = copy(inst[:Consumption, :lossfactor_SLR])
@@ -326,6 +332,39 @@ function runsim(model::Model, draws::DataFrame, ism_used::Bool, omh_used::Bool, 
             for jj in 2:ncol(draws)
                 mcres[Symbol(names(draws)[jj])] = draws[ii, jj]
             end
+        end
+
+        # save out the consumption lossfactor as a CSV file
+        if save_lossfactor_as_csv
+
+            # extract the lossfactor, add a year column and name variable columns by countries' ISO3 code
+            df_lossfactor = hcat(DataFrame(mc_run = ii, year = collect(2010:2200)),
+            DataFrame(copy(inst[:Consumption, :lossfactor_conspc]), countries_iso3))
+
+            # subset to years of interest
+            filter!(row -> row.year <= 2150, df_lossfactor)
+
+            if !isnothing(country_iso3_subset)
+                # define which columns to be used for subsetting (mc_run, year,)
+                columns_to_keep = vcat(["mc_run", "year"], country_iso3_subset)
+
+                # select accordingly
+                select!(df_lossfactor, Symbol.(columns_to_keep))
+            end
+
+            # write out the results
+            CSV.write(string(dir_lossfactor_csv, "/lossfactor_conspc/lossfactor_mc", ii, ".csv"), df_lossfactor)
+
+            # repeat for global temperature and sea level rise
+            df_t_at = hcat(DataFrame(mc_run = ii, year = collect(2010:2200)),
+                           DataFrame(T_AT = copy(inst[:TemperatureModel, :T_AT])))
+            df_slr = hcat(DataFrame(mc_run = ii, year = collect(2010:2200)),
+                           DataFrame(SLR = copy(inst[:SLRModel, :SLR])))
+
+            # write out as CSV
+            CSV.write(string(dir_lossfactor_csv, "/T_AT/T_AT_mc", ii, ".csv"), df_t_at)
+            CSV.write(string(dir_lossfactor_csv, "/SLR/SLR_mc", ii, ".csv"), df_slr)
+
         end
 
         push!(results, mcres)
