@@ -1,19 +1,39 @@
+# set the working directory
 cd("src")
+
+# execute the required META scripts
 include("../src/MimiMETA.jl")
 include("../src/montecarlo.jl")
 
 # load JLD2 package for save_object and load_object functions
 using JLD2
 using Random
+# load DataFrames and Threads for multi-threading
+using DataFrames
+using Base.Threads
 
-# dimensions are taken from src/basemodel.jl
+# extract country ISO3 codes from META
 countries = CSV.read("../data/pattern-scaling.csv", DataFrame).Country
+
+# load the ISO3 codes of countries that feature in MSCI indices
+countries_with_marketcap = CSV.read("../data/META_countries_with_marketcap.csv", DataFrame).iso3
+
+# map the years in META manually
 years = collect(2010:2200)
-seed_used = 25081776
 
+# fix the master seed, the MC sample size and the output directory globally
+global seed_global = 25081776
 global mc_samplesize_global = 10000
+# global dir_output_global = "C:/Users/pwaidelich/Downloads/GitHub - Local/equity_var_climate/data/META MC results"
+global dir_output_global = "Y:/gem/10 Research/10 Projects/GREENFIN/70 Equity VaR Tipping Points/META_results_Aug2024"
+# global dir_output_global = "//d/groups/gess/cfp/gem/10 Research/10 Projects/GREENFIN/70 Equity VaR Tipping Points/META_results_Aug2024"
 
-Random.seed!(seed_used)
+#####################################################
+############## DRAW MONTE CARLO PARAMETERS ##########
+#####################################################
+
+# draw the MC parameters via getsim()
+Random.seed!(seed_global)
 global mc_draws_used = getsim(mc_samplesize_global,
                 # NOTE: we use Hope & Schaefer PCF for consistency with Dietz et al 2021
                 # this means that there is effectively no MC draws for the PCF component
@@ -27,10 +47,12 @@ global mc_draws_used = getsim(mc_samplesize_global,
                false, # emuc
                false) # prtp
 
-# Damage function draws
+### add the damage function draws
 # NOTE: we do this outside of Mimi's functionality to facilitate multivariate distributions
+# first, calibrate multivariate Gaussian using point estimates & vcov matrix from BHM, main spec
 bhm_mvn = MvNormal([0.012718353, -0.00048709], [0.0000143458 -0.000000375824; -0.000000375824 0.0000000140157])
-Random.seed!(seed_used)
+# then, draw parameters (jointly)
+Random.seed!(seed_global)
 bhm_draws = rand(bhm_mvn, mc_samplesize_global)
 mc_draws_used.Consumption_beta1_bhm = bhm_draws[1, :]
 mc_draws_used.Consumption_beta2_bhm = bhm_draws[2, :]
@@ -38,19 +60,23 @@ mc_draws_used.Consumption_beta2_bhm = bhm_draws[2, :]
 # set the coacch seeds to integers starting from 1 and ending at MC sample size
 mc_draws_used.Consumption_seed_coacch = collect(1:mc_samplesize_global)
 
-# draw parameters for AMOC collapse a la Cai et al 2016
-# NOTE: we do this outside of Mimi's functionality to not alter the random draws already simulated --> move inside montecarlo.jl for the next round of runs
-#cai_transitiontime = TriangularDist(10, 250, 50)
-#cai_finaldamages = TriangularDist(0.1, 0.2, 0.15)
-#Random.seed!(seed_used)
-#mc_draws_used.AMOC_Delta_AMOC_Cai = rand(cai_transitiontime, mc_samplesize_global)
-#Random.seed!(seed_used)
-#mc_draws_used.AMOC_max_GDPimpact_Cai = rand(cai_finaldamages, mc_samplesize_global)
+# export the MC draws used as a CSV file for reproducibility
+CSV.write(string(dir_output_global, "/mc_draws_used_n", mc_samplesize_global, ".csv"), mc_draws_used)
 
-function run_equityvaluation_mc(mc_samplesize = 2000; rcp = "RCP4.5", ssp = "SSP2", persist::Union{Float64, AbstractString} = "Distribution", seed_used = 25081776,
-                                tp_used = "all", tdamage = "bhm_pointestimate", omh = "none", amoc = "HADCM", saf = "Distribution mean",
-                                dir_output = "C:/Users/pwaidelich/Downloads/GitHub - Local/equity_var_climate/data/META MC results")
+
+#####################################################
+############ DEFINE MC ANALYSIS FUNCTION ############
+#####################################################
+
+# write a function that runs META's MC mode with the required specification
+function run_equityvaluation_mc(mc_samplesize = mc_samplesize_global; rcp = "RCP4.5", ssp = "SSP2", persist::Union{Float64, AbstractString} = 1., seed_used = seed_global,
+                                tp_used = "all", tdamage = "coacch_distribution", omh = "none", amoc = "none", saf = "Distribution mean",
+                                dir_output = dir_output_global)
     # check the function inputs
+    if mc_samplesize > size(mc_draws_used)[1]
+        error("Selected mc_samplesize exceeds the no. of rows in mc_draws_used")
+    end
+
     if (isa(persist, AbstractString) && persist != "Distribution")
         error("persist can only be set to Distribution if it is a string")
     end
@@ -81,6 +107,7 @@ function run_equityvaluation_mc(mc_samplesize = 2000; rcp = "RCP4.5", ssp = "SSP
         error("amoc input not supported")
     end
 
+    # if saf is 'none', we set it to false
     if saf == "none"
         safversion = false
     else
@@ -95,13 +122,14 @@ function run_equityvaluation_mc(mc_samplesize = 2000; rcp = "RCP4.5", ssp = "SSP
     # function base_model(; rcp="CP-Base", ssp="SSP2", co2="Expectation", ch4="default", warming="Best fit multi-model mean", tdamage="none", slrdamage="none")
     # function full_model(; rcp="RCP4.5", ssp="SSP2", co2="Expectation", ch4="default", warming="Best fit multi-model mean", tdamage="pointestimate", slrdamage="mode", saf="Distribution mean", interaction=true, pcf="Fit of Hope and Schaefer (2016)", omh="Whiteman et al. beta 20 years", amaz="Cai et al. central value", gis="Nordhaus central value", wais="Value", ism="Value", amoc="IPSL", nonmarketdamage=false)
 
+    # set up the model
     Random.seed!(seed_used)
     global model = full_model(;
         rcp=rcp,
         ssp=ssp,
         tdamage=tdamage,
         slrdamage="mode",
-        saf=safversion,
+        saf=safversion, # this will be false if saf is 'none'
         interaction=tp_used != "none",
         pcf=ifelse(tp_used == "all" || occursin("PCF", tp_used), "Fit of Hope and Schaefer (2016)", false),
         omh=ifelse(tp_used == "all" || occursin("OMH", tp_used), omhversion, false),
@@ -111,325 +139,142 @@ function run_equityvaluation_mc(mc_samplesize = 2000; rcp = "RCP4.5", ssp = "SSP
         ism=ifelse(tp_used == "all" || occursin("ISM", tp_used), "Value", false),
         amoc=ifelse(tp_used == "all" || occursin("AMOC", tp_used), amocversion, false))
 
-    ## Update persistence parameter phi (hard-coded default: 0.5; MC default: uniform from 0 to 1)
+    # update persistence parameter phi (hard-coded default: 0.5; MC default: uniform from 0 to 1)
     mc_draws_mutated = copy(mc_draws_used)
-
     if !isa(persist, AbstractString)
         mc_draws_mutated.Consumption_damagepersist .= persist
     end
 
+    # if we use the AMOC collapse a la Cai et al. (2016), overwrite the model parameter (defaults to 0.)
     if amoc == "Cai"
         myupdate_param!(model, :AMOC, :use_AMOC_Cai_impacts, 1.)
     end
 
+    # create an identifier string for the model settings used
+    parameter_id = string("n", mc_samplesize, "_", replace(replace(rcp, "." => ""), "/" => ""), replace(ssp, "." => ""),
+                          "_persist", persist, "_tip", tp_used, "_tdamage", tdamage, "_omh", omh, "_amoc", amoc)
+
+    # if SAF is deactivated, add this to the identifier string
+    if saf == "none"
+        parameter_id = string(parameter_id, "_safnone")
+    end
+
+    # print out for tracking progress
+    print(parameter_id)
+
+    # map (& if required, create) the subfolder where GDP loss CSV files will be stored
+    subfolder_path = string(dir_output, "/", parameter_id)
+    if !isdir(subfolder_path)
+        mkdir(subfolder_path)
+    end
+
+    if !isdir(string(subfolder_path, "/lossfactor_conspc"))
+        mkdir(string(subfolder_path, "/lossfactor_conspc"))
+    end
+
+    if !isdir(string(subfolder_path, "/T_AT"))
+        mkdir(string(subfolder_path, "/T_AT"))
+    end
+
+    if !isdir(string(subfolder_path, "/SLR"))
+        mkdir(string(subfolder_path, "/SLR"))
+    end
+
+    # if the N-th MC run in the subfolder already exists (= spec has already been run), exit
+    if isfile(string(subfolder_path, "/lossfactor_conspc/lossfactor_mc", mc_samplesize, ".csv"))
+        print("Lossfactor directory w/ required sample size already exists. Skipping...")
+        return "Done"
+    end
+
+    # fix the seed and run the MC analysis
     Random.seed!(seed_used)
-    results = runsim(model, mc_draws_mutated,
+    results = runsim(model,
+                     mc_draws_mutated,
                      tp_used == "all" || occursin("ISM", tp_used), # ism_used
                      omhversion != false && (tp_used == "all" || occursin("OMH", tp_used)), # omh_used
                      amocversion != false && (tp_used == "all" || occursin("AMOC", tp_used)), # amoc_used
                      safversion != false, # saf_used (always true)
                      ifelse(tp_used == "all" || occursin("AMAZ", tp_used), "Distribution", "none"), # AMAZ
-                     ifelse(tp_used == "all" || occursin("WAIS", tp_used), "Distribution", "none") # WAIS
+                     ifelse(tp_used == "all" || occursin("WAIS", tp_used), "Distribution", "none"), # WAIS
+                     save_lossfactor_as_csv = true, # save out the GDP loss as a CSV file
+                     dir_lossfactor_csv = subfolder_path, # specify the location where CSV files are stored
+                     country_iso3_subset = countries_with_marketcap # only save out GDP loss factors for countries in MSCI indices
                      ) # save all random variables)
 
-    # save out as a pickle-like HDF object
-    save_object(string(dir_output, "/jld2_files/", mc_samplesize,
-                        # remove special characters from scenario names that can cause filename issues: ".", "/"
-                        "_", replace(replace(rcp, "." => ""), "/" => ""), replace(ssp, "." => ""),
-                        "_persist", persist,
-                        "_tip", tp_used, "_tdamage", tdamage,
-                        "_omh", omh, "_amoc", amoc,
-                        ".jld2"),
+    # save out MC results as a pickle-like HDF object
+    if !isdir(string(dir_output, "/jld2_files"))
+        mkdir(string(dir_output, "/jld2_files"))
+    end
+
+    save_object(string(dir_output, "/jld2_files/", parameter_id, ".jld2"),
                 results)
 
-    # return the results
-    results
+    # return a Boolean indicating success
+    return true
 end
 
-# test the function quickly
-# temp = run_equityvaluation_mc(50, rcp = "RCP4.5", ssp = "SSP2", persist = "Distribution", tp_used = "all")
 
-# procedure for nyears X ncountries matrices
-function convert_mcresults_to_longdf(results, variable)
-    if typeof(results[1][variable]) == Matrix{Union{Missing, Float64}} && size(results[1][variable]) == (length(years), length(countries))
-        df_results = hcat(DataFrame(mc_run = 1, year = years), DataFrame(results[1][variable], countries))
+##############################################################
+################## RUN SPECIFICATIONS OF INTEREST ############
+##############################################################
 
-        for jj in 2:length(results)
-            df_results = vcat(df_results, hcat(DataFrame(mc_run = jj, year = years), DataFrame(results[jj][variable], countries)))
-        end
-    else
-        # condense results from MC runs into a single DataFrame
-        df_results = DataFrame(mc_run = Int64[], variable = Symbol[], value = Float64[])
+# quick code to run the main specification (COMMENTED OUT)
+# run_equityvaluation_mc(mc_samplesize_global)
+# run_equityvaluation_mc(mc_samplesize_global, tp_used="none")
 
-        for jj in 1:length(results)
-            push!(df_results, [jj, variable, results[jj][variable]])
-        end
-    end
+# Step 1: Create a DataFrame with all specifications to be run
+# First we loop through the RCP-SSP pairs (first SSP2, then SSP5, all TPs) (12x)
+# Then, we continue through the individual tipping points (SSP2-4.5) (6x)
+#    NOTE: for OMH (which are deactivated in default spec), we need to switch omh from 'none' to 'default', otherwise this is equivalent to no TPs
+# Then, different damage function specifications (SSP2-4.5, all TPs) (4x)
+# Then, we run specs with and without tipping points a la Dietz et al 2021 (2x)
+# Then, Cai et al. AMOC collapse (SSP2-4.5 and SSP2-8.5, all TPs) (2x)
+specifications = DataFrame(
+    rcp = vcat(repeat(["RCP4.5", "RCP3-PD/2.6", "RCP8.5"], inner=2, outer=2),
+               repeat(["RCP4.5"], inner = 13),
+               ["RCP8.5"]),
+    ssp = vcat(repeat(["SSP2", "SSP5"], inner=6),
+               repeat(["SSP2"], inner = 14)),
+    tp_used = vcat(repeat(["all", "none"], outer=6), ["OMH", "PCF", "GIS", "WAIS", "AMAZ", "ISM"], repeat(["all", "none"], outer=3), ["all", "all"]),
+    tdamage = vcat(repeat(["coacch_distribution"], inner=18), repeat(["bhm_distribution"], inner=4), repeat(["coacch_distribution"], inner=4)),
+    persist = vcat(repeat([1.], inner=18), [0., 0., "Distribution", "Distribution"], repeat([1.], inner = 4)),
+    omh = vcat(repeat(["none"], inner=12), ["default"], repeat(["none"], inner = 9), ["default"], repeat(["none"], inner = 3)),
+    amoc = vcat(repeat(["none"], inner=22), ["IPSL", "none", "Cai", "Cai"]),
+    saf = vcat(repeat(["Distribution mean"], inner=23), ["none", "Distribution mean", "Distribution mean"])
+)
 
-    df_results
-end
+# export as a CSV file for inspection and reproducibility
+CSV.write(string(dir_output_global, "/specifications_META.csv"), specifications)
 
-# test the function
-# convert_mcresults_to_longdf(temp, :Consumption_lossfactor_temp)
+# initiate an empty vector in which we store specifications that throw errors
+specs_with_errors = Vector{Int}()
 
-function extract_lossfactors(mc_samplesize=nothing; rcp=nothing, ssp=nothing, persist=nothing, tp_used = "all",
-                             tdamage = "bhm_pointestimate", omh = "none", amoc = "HADCM", saf = "Distribution mean",
-                             dir_output = "C:/Users/pwaidelich/Downloads/GitHub - Local/equity_var_climate/data/META MC results")
+# lock to avoid data-racing
+mylock = ReentrantLock()
 
-    # combine the parameter combinations into an identifier string
-    parameter_id = string("n", mc_samplesize, "_", replace(replace(rcp, "." => ""), "/" => ""), replace(ssp, "." => ""),
-                          "_persist", persist, "_tip", tp_used, "_tdamage", tdamage, "_omh", omh, "_amoc", amoc)
+# parallelize using @threads
+# NOTE: as of August 2024, we do not use parallelization due to issues with @threads. UNCOMMENT the line below and COMMENT OUT the normal for-loop for parallelization
+#Threads.@threads for ii in 1:nrow(specifications)
+for ii in 1:nrow(specifications)
+    try
+        spec = specifications[ii, :]
+        run_equityvaluation_mc(rcp = spec.rcp,
+                               ssp = spec.ssp,
+                               tp_used = spec.tp_used,
+                               tdamage = spec.tdamage,
+                               persist = spec.persist,
+                               omh = spec.omh,
+                               amoc = spec.amoc,
+                               saf = spec.saf)
+    catch e
+        println("Error for specification ", ii, ": ", e)
 
-    # print out the parameters to track progress
-    print(parameter_id)
-
-    # if the file already exists, skip this interation
-    if isfile(string(dir_output, "/lossfactors/lossfactor_conspc/lossfactor_conspc_", parameter_id, ".csv"))
-        print("File already exists. Skipping...")
-        return "Done"
-    end
-
-    # run equity valuations with the set parameters
-    results = run_equityvaluation_mc(mc_samplesize,
-                                     rcp =  rcp,
-                                     ssp = ssp,
-                                     tp_used = tp_used,
-                                     persist = persist,
-                                     tdamage = tdamage,
-                                     omh = omh,
-                                     amoc = amoc,
-                                     saf = saf)
-
-    # loop through different damage factors of interest
-    for lossfactor_name_jj in ["lossfactor_conspc"] #, "lossfactor_persistence",
-                                #"lossfactor_SLR", "lossfactor_extradamages", "lossfactor_temp"]
-        # track Progress
-        print(string("Extracting ", lossfactor_name_jj, "..."))
-
-        # extract the damage factor of interest
-        df_gdppc_damagefactor = convert_mcresults_to_longdf(results, Symbol(string("Consumption_", lossfactor_name_jj)))
-
-        # add meta information
-        insertcols!(df_gdppc_damagefactor, :rcp => rcp)
-        insertcols!(df_gdppc_damagefactor, :ssp => ssp)
-        insertcols!(df_gdppc_damagefactor, :tp_used => tp_used)
-        insertcols!(df_gdppc_damagefactor, :persist => persist)
-        insertcols!(df_gdppc_damagefactor, :tdamage => tdamage)
-
-        # export as CSV
-        CSV.write(string(dir_output, "/lossfactors/", lossfactor_name_jj, "/",
-        lossfactor_name_jj, "_", parameter_id, ".csv"), df_gdppc_damagefactor)
-    end
-
-    return "Done"
-end
-
-# test the function
-# extract_lossfactors(50, rcp = "RCP4.5", ssp = "SSP2", persist = "Distribution",
-#                    tp_used = "all")
-
-# run MC across scenarios & relevant settings, saving out results as .jld2 files
-for omh_jj in ["none"]#, "default"]
-    for persist_jj in [1.] #"Distribution"] #, 0., 1.] # 1.0 = no persistence, 0.0 = full persistence
-        for tdamage_jj in ["waid_pointestimate"] # "bhm_distribution"] #, "waid_distribution"] #, "coacch_central"]
-            for (rcp_jj, ssp_jj) in [("RCP4.5", "SSP2")]
-                for tp_used_jj in ["all"]#¨ü, "PCF", "GIS", "WAIS", "AMAZ", "OMH", "ISM", "AMOC"]
-                    for amoc_jj in ["none"]
-
-                    # skip parameter combinations that are not of interest
-                    #if (rcp_jj, ssp_jj) != ("RCP4.5", "SSP2") && (!(tp_used_jj in ["all", "none"]) || !(tdamage_jj in ["coacch_central", "waid_pointestimate"]) || persist_jj != 1. || omh_jj != "none")
-                    #    continue
-                    #elseif persist_jj != "1.0" && (!(tp_used_jj in ["all", "none"]) || !(tdamage_jj in ["bhm_pointestimate", "waid_pointestimate", "coacch_central"]) || omh_jj != "none")
-                    #    continue
-                    #elseif !(tp_used_jj in ["all", "none"]) && (tdamage_jj != "waid_pointestimate" || omh_jj != "none")
-                    #    continue
-                    #elseif tdamage_jj != "waid_pointestimate" && omh_jj != "none"
-                    #    continue
-                    #elseif omh_jj != "none" && tp_used_jj == "none"
-                    #    continue
-                    #end
-
-                        extract_lossfactors(mc_samplesize_global, rcp=rcp_jj, ssp=ssp_jj, persist=persist_jj, tp_used=tp_used_jj,
-                                        tdamage = tdamage_jj, omh=omh_jj, amoc = amoc_jj)
-
-                    end
-                end
-            end
+        # add the specification to the vector using the reentrant lock
+        lock(mylock) do
+            push!(specs_with_errors, ii)
         end
     end
 end
 
-# do some runs manually
-extract_lossfactors(mc_samplesize_global, rcp="RCP4.5", ssp="SSP2", persist=1., tp_used="all",
-                    tdamage = "coacch_central", omh="none", amoc = "none")
-
-### do the alternative run where we use OMH w/ default specification, AMOC slowdown, and treat SAF as tipping point
-# first, conduct a run that also excludes SAF from the "excl. climate tipping points"
-extract_lossfactors(mc_samplesize_global, rcp="RCP4.5", ssp="SSP2", persist=1., tp_used="none",
-                    tdamage = "coacch_central", omh="none", amoc = "none", saf = "none",
-                    dir_output = "C:/Users/pwaidelich/Downloads/GitHub - Local/equity_var_climate/data/META MC results/alternative_tipping_points")
-# then, conduct a run that features default specifications for OMH and AMOC slowdown (= IPSL), as well as SAF
-extract_lossfactors(mc_samplesize_global, rcp="RCP4.5", ssp="SSP2", persist=1., tp_used="all",
-                    tdamage = "coacch_central", omh="default", amoc = "IPSL", saf = "Distribution mean",
-                    dir_output = "C:/Users/pwaidelich/Downloads/GitHub - Local/equity_var_climate/data/META MC results/alternative_tipping_points")
-
-#### cost to investors
-# map the directory
-dir_meta_results = "C:/Users/pwaidelich/Downloads/GitHub - Local/equity_var_climate/data/META MC results"
-
-# baseline without pulse
-Random.seed!(seed_used)
-model = full_model(;
-    rcp="RCP4.5",
-    ssp="SSP2",
-    tdamage="coacch_central",
-    slrdamage="mode",
-    saf="Distribution mean",
-    interaction=true,
-    pcf="Fit of Hope and Schaefer (2016)",
-    omh="Whiteman et al. beta 20 years",
-    amaz="Cai et al. central value",
-    gis="Nordhaus central value",
-    wais="Value",
-    ism="Value",
-    amoc="IPSL")
-
-run(model)
-
-df_temp_country = DataFrame(model[:Consumption, :T_country], countries)
-CSV.write("Tcountry_META_full_model.csv", df_temp_country)
-
-model[:Consumption, :T_country]
-model[:Consumption, :alpha_coacch]
-
-
-df_lossfactor_base = hcat(DataFrame(year = years), DataFrame(model[:Consumption, :lossfactor_conspc], countries))
-CSV.write(string(dir_meta_results, "/lossfactors/singlerun_baseline.csv"), df_lossfactor_base)
-
-include("../src/MimiMETA.jl")
-model_coacch_distribution = full_model(;
-    rcp="RCP4.5",
-    ssp="SSP2",
-    tdamage="coacch_distribution",
-    slrdamage="mode",
-    saf="Distribution mean",
-    interaction=true,
-    pcf="Fit of Hope and Schaefer (2016)",
-    omh="Whiteman et al. beta 20 years",
-    amaz="Cai et al. central value",
-    gis="Nordhaus central value",
-    wais="Value",
-    ism="Value",
-    amoc="IPSL")
-
-run(model_coacch_distribution)
-
-df_lossfactor_coacch_distribution = hcat(DataFrame(year = years), DataFrame(model_coacch_distribution[:Consumption, :lossfactor_conspc], countries))
-CSV.write(string(dir_meta_results, "/lossfactors/singlerun_coacch_distribution.csv"), df_lossfactor_coacch_distribution)
-
-
-model_coacch_distribution[:Consumption, :alpha_coacch]
-model_coacch_distribution[:Consumption, :seed_coacch]
-model_coacch_distribution[:Consumption, :use_coacch_distribution]
-
-myupdate_param!(model_coacch_distribution, :Consumption, :seed_coacch, 1)
-
-run(model_coacch_distribution)
-
-model_coacch_distribution[:Consumption, :alpha_coacch]
-
-Random.seed!(seed_used)
-results = runsim(model_coacch_distribution, mc_draws_used,
-                 true,  # ism_used
-                 true, # omh_used
-                 true,  # amoc_used
-                 true, # saf_used (always true)
-                 "Distribution",  # AMAZ
-                 "Distribution" # WAIS
-                 )
-
-results[3][:Consumption_alpha_coacch]
-names(results[1])
-results[3][:Consumption_seed_coacch]
-
-pulse_size_co2 = 1
-# IPCC AR6 Table 7.15: 27 g CO2e GWP100 for non-fossil CH4, 29.8 for fossil CH4
-# NOTE: ch4_extra is in Mt, not Gt
-pulse_size_ch4 = 1*(1/27)*1000
-pulse_year = 2024
-pulse_index = findfirst(dim_keys(model, :time) .== pulse_year)
-
-co2_extra_new = zeros(dim_count(model, :time))
-co2_extra_new[pulse_index] = pulse_size_co2
-
-ch4_extra_new = zeros(dim_count(model, :time))
-ch4_extra_new[pulse_index] = pulse_size_ch4
-
-# CO2 pulse
-Random.seed!(seed_used)
-model_co2pulse = full_model(;
-    rcp="RCP4.5",
-    ssp="SSP2",
-    tdamage="pointestimate",
-    slrdamage="mode",
-    saf="Distribution mean",
-    interaction=true,
-    pcf="Fit of Hope and Schaefer (2016)",
-    omh="Whiteman et al. beta 20 years",
-    amaz="Cai et al. central value",
-    gis="Nordhaus central value",
-    wais="Value",
-    ism="Value",
-    amoc="IPSL")
-
-myupdate_param!(model_co2pulse, :CO2Model, :co2_extra, co2_extra_new)
-run(model_co2pulse)
-
-df_lossfactor_co2pulse = hcat(DataFrame(year = years), DataFrame(model_co2pulse[:Consumption, :lossfactor_conspc], countries))
-CSV.write(string(dir_meta_results, "/lossfactors/lossfactor_conspc_pulses/singlerun_co2pulse.csv"), df_lossfactor_co2pulse)
-
-# CH4 pulse_size
-Random.seed!(seed_used)
-model_ch4pulse = full_model(;
-    rcp="RCP4.5",
-    ssp="SSP2",
-    tdamage="pointestimate",
-    slrdamage="mode",
-    saf="Distribution mean",
-    interaction=true,
-    pcf="Fit of Hope and Schaefer (2016)",
-    omh="Whiteman et al. beta 20 years",
-    amaz="Cai et al. central value",
-    gis="Nordhaus central value",
-    wais="Value",
-    ism="Value",
-    amoc="IPSL")
-
-myupdate_param!(model_ch4pulse, :CH4Model, :ch4_extra, ch4_extra_new)
-run(model_ch4pulse)
-
-df_lossfactor_ch4pulse = hcat(DataFrame(year = years), DataFrame(model_ch4pulse[:Consumption, :lossfactor_conspc], countries))
-CSV.write(string(dir_meta_results, "/lossfactors/lossfactor_conspc/lossfactor_conspc_singlerun_ch4pulse_n1_RCP45SSP2_persistDistribution_tipall_tdamageBHM.csv"), df_lossfactor_ch4pulse)
-
-# placebo
-Random.seed!(seed_used)
-model_placebo = full_model(;
-    rcp="RCP4.5",
-    ssp="SSP2",
-    tdamage="pointestimate",
-    slrdamage="mode",
-    saf="Distribution mean",
-    interaction=true,
-    pcf="Fit of Hope and Schaefer (2016)",
-    omh="Whiteman et al. beta 20 years",
-    amaz="Cai et al. central value",
-    gis="Nordhaus central value",
-    wais="Value",
-    ism="Value",
-    amoc="IPSL")
-
-myupdate_param!(model_placebo, :CH4Model, :ch4_extra, zeros(dim_count(model, :time)))
-run(model_placebo)
-
-df_lossfactor_placebo = hcat(DataFrame(year = years), DataFrame(model_placebo[:Consumption, :lossfactor_conspc], countries))
-CSV.write(string(dir_meta_results, "/lossfactors/lossfactor_conspc_pulses/singlerun_placebo.csv"), df_lossfactor_placebo)
+# report specifications with errors
+println("Following specs were aborted due to errors: ", specs_with_errors, ". Please re-run single-threaded and/or inspect")
