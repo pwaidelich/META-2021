@@ -71,7 +71,11 @@ function base_model(; rcp="CP-Base", ssp="SSP2", co2="Expectation", ch4="default
 
     # Setup Consumption
     cons[:T_country] = pattscale[:T_country];
+    cons[:T_AT] = temperaturemodel[:T_AT];
     cons[:SLR] = slr[:SLR];
+
+    # set extra damages of AMOC to zero (will be overwritten if amoc is true)
+    cons[:extradamage_AMOC] = zeros(dim_count(model, :time), dim_count(model, :country))
 
     # Setup Utility
     utility[:conspc] = cons[:conspc];
@@ -166,8 +170,14 @@ function full_model(; rcp="RCP4.5", ssp="SSP2", co2="Expectation", ch4="default"
         connect_param!(model, :AMOC=>:T_AT, :TemperatureModel => :T_AT);
         connect_param!(model, :AMOC=>:T_country_base, :PatternScaling=>:T_country);
 
+        # connect pattern scale input to emulate AMOC impacts with damage functions that use GMST as input (e.g., COACCH)
+        connect_param!(model, :AMOC=>:scale_country, :PatternScaling => :scale_country);
+
         ## Use AMOC temperatures rather than PatternScaling temperatures
         connect_param!(model, :Consumption=>:T_country, :AMOC=>:T_country_AMOC);
+        connect_param!(model, :Consumption=>:deltaTglobal_country_AMOC, :AMOC => :deltaTglobal_country_AMOC);
+        connect_param!(model, :Consumption=>:extradamage_AMOC, :AMOC => :extradamage_AMOC);
+        #connect_param!(model, :Consumption=>:SLR_AMOC_adder, :AMOC => :SLR_AMOC_adder);
 
         amocmodel[:uniforms] = rand(Uniform(0, 1), dim_count(model, :time));
         if interaction != false
